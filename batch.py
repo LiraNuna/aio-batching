@@ -1,71 +1,86 @@
 import asyncio
-from typing import Any, Awaitable, List, Tuple
-
-queue: List[Tuple[int, asyncio.Future]] = []
-event = asyncio.Event()
-loop = asyncio.get_event_loop()
 
 
-def scheduler():
-    global queue
-    if not queue:
-        return
+class Batch:
+    # Global for all batches
+    batches = []
+    loop = asyncio.get_event_loop()
 
-    print('>>>>> flush', [k for k, _ in queue])
-    for key, future in queue:
-        future.set_result(key ** key)
+    # Per-batch instances
+    futures = []
+    event = asyncio.Event()
 
-    queue = []
-    event.set()
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        cls.futures = []
+        cls.event = asyncio.Event()
+        cls.batches.append(cls)
+
+    @classmethod
+    def scheduler(cls):
+        cls.batches = sorted(cls.batches, key=lambda batch: len(batch.futures))
+        current_batch = cls.batches.pop()
+
+        if current_batch.futures:
+            batch_keys = [key for key, future in current_batch.futures]
+            future_results = current_batch.resolve_futures(batch_keys)
+            for key_future_pair, result in zip(current_batch.futures, future_results):
+                key, future = key_future_pair
+                future.set_result(result)
+
+        current_batch.event.set()
+        current_batch.futures = []
+        cls.batches.insert(0, current_batch)
+
+    @staticmethod
+    def resolve_futures(batch):
+        raise NotImplemented()
+
+    @classmethod
+    async def gen(cls, key):
+        future = cls.loop.create_future()
+        cls.futures.append((key, future))
+
+        cls.event.clear()
+        cls.loop.call_soon(cls.scheduler)
+        await cls.event.wait()
+
+        return future.result()
+
+    @classmethod
+    async def genv(cls, keys):
+        return [await cls.gen(key) for key in keys]
 
 
-async def single(x: int):
-    future = loop.create_future()
-    queue.append((x, future))
-
-    event.clear()
-    loop.call_soon(scheduler)
-    await event.wait()
-
-    return future.result()
+class DoubleBatch(Batch):
+    @staticmethod
+    def resolve_futures(batch):
+        return [x+x for x in batch]
 
 
-async def deep(y) -> Awaitable[int]:
-    x = await single(-1)
-    x = [await single(t) for t in (9, 8, 7, 6)]
+class SquareBatch(Batch):
+    @staticmethod
+    def resolve_futures(batch):
+        return [x*x for x in batch]
 
-    return x
+
+async def square_double(x):
+    double = await DoubleBatch.gen(x)
+    square = await SquareBatch.gen(double)
+    return square
 
 
 async def root():
-    x = await single(1)
-    y = await asyncio.gather(
-        single(2), 
-        single(3), 
-        single(4),
-    )
-    z = await asyncio.gather(
-        single(2), 
-        single(3), 
-        single(4),
+    x = await asyncio.gather(
+        square_double(10),
+        square_double(20),
+        square_double(30),
     )
 
-    w = await asyncio.gather(
-        single(1),
-        asyncio.gather(
-            single(2), 
-            single(3), 
-            single(4),
-        ),
-        asyncio.gather(
-            deep(2), 
-            deep(3), 
-            deep(4),
-        ),
-    )
-
-    print(x, y, z, w, sep='\n')
+    print(x)
 
 
+loop = asyncio.get_event_loop()
 loop.run_until_complete(root())
 
