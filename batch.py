@@ -19,21 +19,27 @@ class Batch:
         cls.batches.append(cls)
 
     @classmethod
+    def schedule(cls):
+        cls.handles.append(cls.loop.call_later(0, cls.scheduler))
+
+    @classmethod
     def scheduler(cls):
         cls.handles.pop()
         if cls.handles:
             return
 
         cls.batches = sorted(cls.batches, key=lambda batch: len(batch.futures))
-        current_batch = cls.batches.pop()
 
+        current_batch = cls.batches.pop()
         if current_batch.futures:
             batch_keys = [key for key, future in current_batch.futures]
             future_results = current_batch.resolve_futures(batch_keys)
-            print('>>> flush', current_batch.__name__, batch_keys)
+            print(f'>>> flush {current_batch.__name__}({len(batch_keys)}) {batch_keys}')
             for key_future_pair, result in zip(current_batch.futures, future_results):
                 key, future = key_future_pair
                 future.set_result(result)
+
+            cls.schedule()
 
         current_batch.event.set()
         current_batch.futures = []
@@ -47,8 +53,8 @@ class Batch:
     async def gen(cls, key):
         future = cls.loop.create_future()
         cls.futures.append((key, future))
-        cls.handles.append(cls.loop.call_later(0, cls.scheduler))
 
+        cls.schedule()
         cls.event.clear()
         await cls.event.wait()
         return future.result()
@@ -88,6 +94,13 @@ async def triple_double(x):
     d3 = await DoubleBatch.gen(d2)
     return d3
 
+
+async def double_square_square_double(x):
+    ds = await double_square(x)
+    sd = await square_double(ds)
+    return sd
+
+
 async def root():
     x = await asyncio.gather(
         square_double(10),
@@ -101,9 +114,12 @@ async def root():
         triple_double(100),
         triple_double(200),
         triple_double(300),
+        double_square_square_double(123),
+        double_square_square_double(456),
+        double_square_square_double(789),
     )
 
-    assert x == [200, 800, 1800, 256, 324, 400, [2, 4, 6, 8, 10, 12], [1, 4, 9, 16, 25, 36], 800, 1600, 2400]
+    assert x == [200, 800, 1800, 256, 324, 400, [2, 4, 6, 8, 10, 12], [1, 4, 9, 16, 25, 36], 800, 1600, 2400, 7324372512, 1383596163072, 12401036654112]
     print(x)
 
 
