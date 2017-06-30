@@ -9,13 +9,11 @@ class Batch:
 
     # Per-batch instances
     futures = []
-    event = asyncio.Event()
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
         cls.futures = []
-        cls.event = asyncio.Event()
         cls.batches.append(cls)
 
     @classmethod
@@ -41,7 +39,6 @@ class Batch:
 
             cls.schedule()
 
-        current_batch.event.set()
         current_batch.futures = []
         cls.batches.insert(0, current_batch)
 
@@ -55,9 +52,7 @@ class Batch:
         cls.futures.append((key, future))
 
         cls.schedule()
-        cls.event.clear()
-        await cls.event.wait()
-        return future.result()
+        return await future
 
     @classmethod
     async def genv(cls, keys):
