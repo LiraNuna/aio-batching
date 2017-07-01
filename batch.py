@@ -2,19 +2,9 @@ import asyncio
 
 
 class Batch:
-    # Global for all batches
-    batches = []
+    batches = {}
     handles = []
     loop = asyncio.get_event_loop()
-
-    # Per-batch instances
-    futures = []
-
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-
-        cls.futures = []
-        cls.batches.append(cls)
 
     @classmethod
     def schedule(cls):
@@ -23,24 +13,22 @@ class Batch:
     @classmethod
     def scheduler(cls):
         cls.handles.pop()
-        if cls.handles:
+        if cls.handles or not cls.batches:
             return
 
-        cls.batches = sorted(cls.batches, key=lambda batch: len(batch.futures))
+        current_batch = max(cls.batches, key=lambda key: len(cls.batches.get(key)))
+        futures = cls.batches.pop(current_batch)
+        if not futures:
+            return
 
-        current_batch = cls.batches.pop()
-        if current_batch.futures:
-            batch_keys = [key for key, future in current_batch.futures]
-            future_results = current_batch.resolve_futures(batch_keys)
-            print(f'>>> flush {current_batch.__name__}({len(batch_keys)}) {batch_keys}')
-            for key_future_pair, result in zip(current_batch.futures, future_results):
-                key, future = key_future_pair
-                future.set_result(result)
+        batch_keys = [key for key, future in futures]
+        future_results = current_batch.resolve_futures(batch_keys)
+        print(f'>>> flush {current_batch.__name__}({len(batch_keys)}) {batch_keys}')
+        for key_future_pair, result in zip(futures, future_results):
+            key, future = key_future_pair
+            future.set_result(result)
 
-            cls.schedule()
-
-        current_batch.futures = []
-        cls.batches.insert(0, current_batch)
+        cls.schedule()
 
     @staticmethod
     def resolve_futures(batch):
@@ -49,7 +37,7 @@ class Batch:
     @classmethod
     async def gen(cls, key):
         future = cls.loop.create_future()
-        cls.futures.append((key, future))
+        cls.batches.setdefault(cls, []).append((key, future))
 
         cls.schedule()
         return await future
