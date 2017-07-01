@@ -11,6 +11,17 @@ class Batch:
         cls.handles.append(cls.loop.call_later(0, cls.scheduler))
 
     @classmethod
+    async def resolve_batch(cls, batch, futures):
+        batch_keys = [key for key, future in futures]
+        print(f'>>> flush {batch.__name__}({len(batch_keys)}) {batch_keys}')
+        future_results = await batch.resolve_futures(batch_keys)
+        for key_future_pair, result in zip(futures, future_results):
+            key, future = key_future_pair
+            future.set_result(result)
+
+        cls.schedule()
+
+    @classmethod
     def scheduler(cls):
         cls.handles.pop()
         if cls.handles or not cls.batches:
@@ -21,14 +32,7 @@ class Batch:
         if not futures:
             return
 
-        batch_keys = [key for key, future in futures]
-        future_results = current_batch.resolve_futures(batch_keys)
-        print(f'>>> flush {current_batch.__name__}({len(batch_keys)}) {batch_keys}')
-        for key_future_pair, result in zip(futures, future_results):
-            key, future = key_future_pair
-            future.set_result(result)
-
-        cls.schedule()
+        cls.loop.create_task(cls.resolve_batch(current_batch, futures))
 
     @staticmethod
     def resolve_futures(batch):
@@ -49,13 +53,15 @@ class Batch:
 
 class DoubleBatch(Batch):
     @staticmethod
-    def resolve_futures(batch):
+    async def resolve_futures(batch):
+        await asyncio.sleep(1)
         return [x+x for x in batch]
 
 
 class SquareBatch(Batch):
     @staticmethod
-    def resolve_futures(batch):
+    async def resolve_futures(batch):
+        await asyncio.sleep(1)
         return [x*x for x in batch]
 
 
