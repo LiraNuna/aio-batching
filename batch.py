@@ -3,12 +3,15 @@ import asyncio
 
 class Batch:
     batches = {}
-    handles = []
+    handle = None
     loop = asyncio.get_event_loop()
 
     @classmethod
     def schedule(cls):
-        cls.handles.append(cls.loop.call_later(0, cls.scheduler))
+        if cls.handle:
+            cls.handle.cancel()
+
+        cls.handle = cls.loop.call_later(0, cls.scheduler)
 
     @classmethod
     async def resolve_batch(cls, batch, futures):
@@ -23,8 +26,7 @@ class Batch:
 
     @classmethod
     def scheduler(cls):
-        cls.handles.pop()
-        if cls.handles or not cls.batches:
+        if not cls.batches:
             return
 
         current_batch = max(cls.batches, key=lambda key: len(cls.batches.get(key)))
