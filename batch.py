@@ -3,15 +3,16 @@ import asyncio
 
 class Batch:
     batches = {}
-    handle = None
     loop = asyncio.get_event_loop()
 
     @classmethod
-    def schedule(cls):
-        if cls.handle:
-            cls.handle.cancel()
+    def schedule(cls, key):
+        if not cls.batches:
+            cls.loop.call_later(0, cls.schedule_batches)
 
-        cls.handle = cls.loop.call_later(0, cls.scheduler)
+        future = cls.loop.create_future()
+        cls.batches.setdefault(cls, []).append((key, future))
+        return future
 
     @classmethod
     async def resolve_batch(cls, batch, futures):
@@ -22,15 +23,10 @@ class Batch:
             key, future = key_future_pair
             future.set_result(result)
 
-        cls.schedule()
-
     @classmethod
-    def scheduler(cls):
-        if not cls.batches:
-            return
-
-        current_batch = max(cls.batches, key=lambda key: len(cls.batches.get(key)))
-        cls.loop.create_task(cls.resolve_batch(current_batch, cls.batches.pop(current_batch)))
+    def schedule_batches(cls):
+        for batch in list(cls.batches.keys()):
+            cls.loop.create_task(cls.resolve_batch(batch, cls.batches.pop(batch)))
 
     @staticmethod
     def resolve_futures(batch):
@@ -38,11 +34,7 @@ class Batch:
 
     @classmethod
     async def gen(cls, key):
-        future = cls.loop.create_future()
-        cls.batches.setdefault(cls, []).append((key, future))
-
-        cls.schedule()
-        return await future
+        return await cls.schedule(key)
 
     @classmethod
     async def genv(cls, keys):
