@@ -28,11 +28,7 @@ class Batch:
             return
 
         current_batch = max(cls.batches, key=lambda key: len(cls.batches.get(key)))
-        futures = cls.batches.pop(current_batch)
-        if not futures:
-            return
-
-        cls.loop.create_task(cls.resolve_batch(current_batch, futures))
+        cls.loop.create_task(cls.resolve_batch(current_batch, cls.batches.pop(current_batch)))
 
     @staticmethod
     def resolve_futures(batch):
