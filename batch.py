@@ -18,7 +18,11 @@ class Batch:
     async def resolve_batch(cls, batch, futures):
         batch_keys = [key for key, future in futures]
         print(f'>>> flush {batch.__name__}({len(batch_keys)}) {batch_keys}')
-        future_results = await batch.resolve_futures(batch_keys)
+
+        future_results = batch.resolve_futures(batch_keys)
+        if asyncio.iscoroutine(future_results):
+            future_results = await future_results
+
         for key_future_pair, result in zip(futures, future_results):
             key, future = key_future_pair
             future.set_result(result)
