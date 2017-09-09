@@ -1,17 +1,37 @@
 import asyncio
 
 
+def sync_wait_for(future_or_coroutine):
+    current_loop = asyncio.get_event_loop()
+    if not current_loop.is_running():
+        return current_loop.run_until_complete(future_or_coroutine)
+
+    asyncio.events._set_running_loop(None)
+
+    new_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(new_loop)
+    result = new_loop.run_until_complete(future_or_coroutine)
+
+    asyncio.set_event_loop(current_loop)
+    asyncio.events._set_running_loop(current_loop)
+
+    return result
+
+
 class Batch:
     batches = {}
-    loop = asyncio.get_event_loop()
+    schedules = set()
 
     @classmethod
     def schedule(cls, key):
-        if not cls.batches:
-            cls.loop.call_later(0, cls.schedule_batches)
+        loop = asyncio.get_event_loop()
+        if loop not in cls.schedules:
+            loop.call_later(0, cls.schedule_batches)
+            cls.schedules.add(loop)
 
-        future = cls.loop.create_future()
+        future = loop.create_future()
         cls.batches.setdefault(cls, []).append((key, future))
+
         return future
 
     @classmethod
@@ -29,8 +49,11 @@ class Batch:
 
     @classmethod
     def schedule_batches(cls):
+        loop = asyncio.get_event_loop()
         for batch in list(cls.batches.keys()):
-            cls.loop.create_task(cls.resolve_batch(batch, cls.batches.pop(batch)))
+            loop.create_task(cls.resolve_batch(batch, cls.batches.pop(batch)))
+
+        cls.schedules.remove(loop)
 
     @staticmethod
     def resolve_futures(batch):
@@ -67,6 +90,7 @@ async def double_square(x):
 
 async def square_double(x):
     square = await SquareBatch.gen(x)
+    print('sq', sync_wait_for(SquareBatch.gen(x)))
     double = await DoubleBatch.gen(square)
     return double
 
@@ -80,6 +104,7 @@ async def triple_double(x):
 
 async def double_square_square_double(x):
     ds = await double_square(x)
+    print('dsds', sync_wait_for(square_double(x)))
     sd = await square_double(ds)
     return sd
 
