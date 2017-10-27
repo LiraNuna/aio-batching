@@ -5,17 +5,8 @@ class Batch:
     batches = {}
     loop = asyncio.get_event_loop()
 
-    @classmethod
-    def schedule(cls, key):
-        if not cls.batches:
-            cls.loop.call_later(0, cls.schedule_batches)
-
-        future = cls.loop.create_future()
-        cls.batches.setdefault(cls, []).append((key, future))
-        return future
-
-    @classmethod
-    async def resolve_batch(cls, batch, futures):
+    @staticmethod
+    async def resolve_batch(batch, futures):
         batch_keys = [key for key, future in futures]
         print(f'>>> flush {batch.__name__}({len(batch_keys)}) {batch_keys}')
 
@@ -27,14 +18,27 @@ class Batch:
             key, future = key_future_pair
             future.set_result(result)
 
-    @classmethod
-    def schedule_batches(cls):
-        for batch in list(cls.batches.keys()):
-            cls.loop.create_task(cls.resolve_batch(batch, cls.batches.pop(batch)))
+    @staticmethod
+    def schedule_batches():
+        for batch in list(Batch.batches.keys()):
+            Batch.loop.create_task(Batch.resolve_batch(batch, Batch.batches.pop(batch)))
+
+    # Internal interface
 
     @staticmethod
     def resolve_futures(batch):
         raise NotImplemented()
+
+    @classmethod
+    def schedule(cls, key):
+        if not Batch.batches:
+            Batch.loop.call_later(0, Batch.schedule_batches)
+
+        future = Batch.loop.create_future()
+        Batch.batches.setdefault(cls, []).append((key, future))
+        return future
+
+    # External interface
 
     @classmethod
     async def gen(cls, key):
