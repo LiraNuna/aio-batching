@@ -3,7 +3,6 @@ import asyncio
 
 class Batch:
     batches = {}
-    loop = asyncio.get_event_loop()
 
     @staticmethod
     async def resolve_batch(batch, futures):
@@ -20,8 +19,9 @@ class Batch:
 
     @staticmethod
     def schedule_batches():
+        loop = asyncio.get_event_loop()
         for batch in list(Batch.batches.keys()):
-            Batch.loop.create_task(Batch.resolve_batch(batch, Batch.batches.pop(batch)))
+            loop.create_task(Batch.resolve_batch(batch, Batch.batches.pop(batch)))
 
     # Internal interface
 
@@ -31,10 +31,11 @@ class Batch:
 
     @classmethod
     def schedule(cls, key):
+        loop = asyncio.get_event_loop()
         if not Batch.batches:
-            Batch.loop.call_later(0, Batch.schedule_batches)
+            loop.call_later(0, Batch.schedule_batches)
 
-        future = Batch.loop.create_future()
+        future = loop.create_future()
         Batch.batches.setdefault(cls, []).append((key, future))
         return future
 
@@ -112,4 +113,3 @@ async def root():
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(root())
-
