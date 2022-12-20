@@ -1,7 +1,9 @@
 import asyncio
+from abc import ABC
+from abc import abstractmethod
 
 
-class Batch:
+class Batch(ABC):
     batches = {}
 
     @staticmethod
@@ -26,8 +28,9 @@ class Batch:
     # Internal interface
 
     @staticmethod
+    @abstractmethod
     def resolve_futures(batch):
-        raise NotImplemented()
+        raise NotImplementedError
 
     @classmethod
     def schedule(cls, key):
