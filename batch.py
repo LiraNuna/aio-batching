@@ -7,29 +7,29 @@ from typing import Optional
 
 
 class Batch(ABC):
-    batches = {}
+    futures: ClassVar[dict] = {}
     timer_handle: ClassVar[Optional[TimerHandle]] = None
 
     @staticmethod
     async def resolve_batch(batch, futures):
-        batch_keys = [key for key, future in futures]
+        batch_keys = list(futures.keys())
         print(f'>>> flush {batch.__name__}({len(batch_keys)}) {batch_keys}')
 
         future_results = batch.resolve_futures(batch_keys)
         if asyncio.iscoroutine(future_results):
             future_results = await future_results
 
-        for key_future_pair, result in zip(futures, future_results):
-            key, future = key_future_pair
-            future.set_result(result)
+        for key, result in zip(batch_keys, future_results):
+            futures[key].set_result(result)
 
-    @classmethod
-    def schedule_batches(cls):
+    @staticmethod
+    def schedule_batches():
         loop = asyncio.get_event_loop()
-        for batch in list(cls.batches.keys()):
-            loop.create_task(cls.resolve_batch(batch, cls.batches.pop(batch)))
+        for batch in filter(lambda b: b.futures, Batch.__subclasses__()):
+            loop.create_task(batch.resolve_batch(batch, batch.futures))
+            batch.futures = {}
 
-        cls.timer_handle = None
+        Batch.timer_handle = None
 
     # Internal interface
 
@@ -41,12 +41,15 @@ class Batch(ABC):
     @classmethod
     def schedule(cls, key):
         loop = asyncio.get_event_loop()
-        if not cls.timer_handle:
-            cls.timer_handle = loop.call_later(0, cls.schedule_batches)
+        if not Batch.timer_handle:
+            Batch.timer_handle = loop.call_later(0, Batch.schedule_batches)
 
-        future = loop.create_future()
-        cls.batches.setdefault(cls, []).append((key, future))
-        return future
+        if not cls.futures:
+            cls.futures = {}
+        if key not in cls.futures:
+            cls.futures[key] = loop.create_future()
+
+        return cls.futures[key]
 
     # External interface
 
@@ -63,14 +66,14 @@ class DoubleBatch(Batch):
     @staticmethod
     async def resolve_futures(batch):
         await asyncio.sleep(1)
-        return [x+x for x in batch]
+        return [x + x for x in batch]
 
 
 class SquareBatch(Batch):
     @staticmethod
     async def resolve_futures(batch):
         await asyncio.sleep(1)
-        return [x*x for x in batch]
+        return [x * x for x in batch]
 
 
 async def double_square(x):
@@ -116,8 +119,13 @@ async def root():
         double_square_square_double(789),
     )
 
-    assert x == [200, 800, 1800, 256, 324, 400, [2, 4, 6, 8, 10, 12], [1, 4, 9, 16, 25, 36], 800, 1600, 2400, 7324372512, 1383596163072, 12401036654112]
     print(x)
+    assert x == [
+        200, 800, 1800, 256, 324, 400,
+        [2, 4, 6, 8, 10, 12],
+        [1, 4, 9, 16, 25, 36],
+        800, 1600, 2400, 7324372512, 1383596163072, 12401036654112,
+    ]
 
 
 if __name__ == '__main__':
