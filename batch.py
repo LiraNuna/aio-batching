@@ -1,10 +1,14 @@
 import asyncio
 from abc import ABC
 from abc import abstractmethod
+from asyncio import TimerHandle
+from typing import ClassVar
+from typing import Optional
 
 
 class Batch(ABC):
     batches = {}
+    timer_handle: ClassVar[Optional[TimerHandle]] = None
 
     @staticmethod
     async def resolve_batch(batch, futures):
@@ -19,11 +23,13 @@ class Batch(ABC):
             key, future = key_future_pair
             future.set_result(result)
 
-    @staticmethod
-    def schedule_batches():
+    @classmethod
+    def schedule_batches(cls):
         loop = asyncio.get_event_loop()
         for batch in list(Batch.batches.keys()):
             loop.create_task(Batch.resolve_batch(batch, Batch.batches.pop(batch)))
+
+        cls.timer_handle = None
 
     # Internal interface
 
@@ -35,8 +41,8 @@ class Batch(ABC):
     @classmethod
     def schedule(cls, key):
         loop = asyncio.get_event_loop()
-        if not Batch.batches:
-            loop.call_later(0, Batch.schedule_batches)
+        if not cls.timer_handle:
+            cls.timer_handle = loop.call_later(0, cls.schedule_batches)
 
         future = loop.create_future()
         Batch.batches.setdefault(cls, []).append((key, future))
