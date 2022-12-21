@@ -26,8 +26,8 @@ class Batch(ABC):
     @classmethod
     def schedule_batches(cls):
         loop = asyncio.get_event_loop()
-        for batch in list(Batch.batches.keys()):
-            loop.create_task(Batch.resolve_batch(batch, Batch.batches.pop(batch)))
+        for batch in list(cls.batches.keys()):
+            loop.create_task(cls.resolve_batch(batch, cls.batches.pop(batch)))
 
         cls.timer_handle = None
 
@@ -45,7 +45,7 @@ class Batch(ABC):
             cls.timer_handle = loop.call_later(0, cls.schedule_batches)
 
         future = loop.create_future()
-        Batch.batches.setdefault(cls, []).append((key, future))
+        cls.batches.setdefault(cls, []).append((key, future))
         return future
 
     # External interface
