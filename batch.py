@@ -1,29 +1,36 @@
+from __future__ import annotations
+
 import asyncio
 from abc import ABC
 from abc import abstractmethod
+from asyncio import Future
 from asyncio import TimerHandle
+from typing import Awaitable
 from typing import ClassVar
+from typing import Generic
+from typing import Iterable
 from typing import Optional
+from typing import TypeVar
+
+Tk = TypeVar('Tk')
+Tv = TypeVar('Tv')
 
 
-class Batch(ABC):
-    futures: ClassVar[dict] = {}
+class Batch(Generic[Tk, Tv], ABC):
+    futures: ClassVar[dict[Tk, Future[Tv]]] = {}
     timer_handle: ClassVar[Optional[TimerHandle]] = None
 
     @staticmethod
-    async def resolve_batch(batch, futures):
+    async def resolve_batch(batch: type[Batch], futures: dict[Tk, Future[Tv]]) -> None:
         batch_keys = list(futures.keys())
         print(f'>>> flush {batch.__name__}({len(batch_keys)}) {batch_keys}')
 
-        future_results = batch.resolve_futures(batch_keys)
-        if asyncio.iscoroutine(future_results):
-            future_results = await future_results
-
+        future_results = await batch.resolve_futures(batch_keys)
         for key, result in zip(batch_keys, future_results):
             futures[key].set_result(result)
 
     @staticmethod
-    def schedule_batches():
+    def schedule_batches() -> None:
         loop = asyncio.get_event_loop()
         for batch in filter(lambda b: b.futures, Batch.__subclasses__()):
             loop.create_task(batch.resolve_batch(batch, batch.futures))
@@ -35,11 +42,11 @@ class Batch(ABC):
 
     @staticmethod
     @abstractmethod
-    def resolve_futures(batch):
+    async def resolve_futures(batch: Iterable[Tk]) -> Iterable[Tv]:
         raise NotImplementedError
 
     @classmethod
-    def schedule(cls, key):
+    def schedule(cls, key: Tk) -> Awaitable[Tv]:
         loop = asyncio.get_event_loop()
         if not Batch.timer_handle:
             Batch.timer_handle = loop.call_later(0, Batch.schedule_batches)
@@ -54,48 +61,48 @@ class Batch(ABC):
     # External interface
 
     @classmethod
-    async def gen(cls, key):
+    async def gen(cls, key: Tk) -> Tv:
         return await cls.schedule(key)
 
     @classmethod
-    async def genv(cls, keys):
+    async def genv(cls, keys: Iterable[Tk]) -> Iterable[Tv]:
         return await asyncio.gather(*[cls.gen(key) for key in keys])
 
 
-class DoubleBatch(Batch):
+class DoubleBatch(Batch[int, int]):
     @staticmethod
-    async def resolve_futures(batch):
+    async def resolve_futures(batch: Iterable[int]) -> Iterable[int]:
         await asyncio.sleep(1)
         return [x + x for x in batch]
 
 
 class SquareBatch(Batch):
     @staticmethod
-    async def resolve_futures(batch):
+    async def resolve_futures(batch: Iterable[int]) -> Iterable[int]:
         await asyncio.sleep(1)
         return [x * x for x in batch]
 
 
-async def double_square(x):
+async def double_square(x: int) -> int:
     double = await DoubleBatch.gen(x)
     square = await SquareBatch.gen(double)
     return square
 
 
-async def square_double(x):
+async def square_double(x: int) -> int:
     square = await SquareBatch.gen(x)
     double = await DoubleBatch.gen(square)
     return double
 
 
-async def triple_double(x):
+async def triple_double(x: int) -> int:
     d1 = await DoubleBatch.gen(x)
     d2 = await DoubleBatch.gen(d1)
     d3 = await DoubleBatch.gen(d2)
     return d3
 
 
-async def double_square_square_double(x):
+async def double_square_square_double(x: int) -> int:
     ds = await double_square(x)
     sd = await square_double(ds)
     return sd
