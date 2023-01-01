@@ -9,6 +9,7 @@ from typing import Awaitable
 from typing import ClassVar
 from typing import Generic
 from typing import Iterable
+from typing import Mapping
 from typing import Optional
 from typing import TypeVar
 
@@ -26,7 +27,10 @@ class Batch(Generic[Tk, Tv], ABC):
         print(f'>>> flush {batch.__name__}({len(batch_keys)}) {batch_keys}')
 
         future_results = await batch.resolve_futures(batch_keys)
-        for key, result in zip(batch_keys, future_results):
+        if future_results.keys() != futures.keys():
+            raise ValueError('Batch resolved an incomplete set of future keys')
+
+        for key, result in future_results.items():
             futures[key].set_result(result)
 
     @staticmethod
@@ -42,7 +46,7 @@ class Batch(Generic[Tk, Tv], ABC):
 
     @staticmethod
     @abstractmethod
-    async def resolve_futures(batch: Iterable[Tk]) -> Iterable[Tv]:
+    async def resolve_futures(batch: Iterable[Tk]) -> Mapping[Tk, Tv]:
         raise NotImplementedError
 
     @classmethod
@@ -71,16 +75,16 @@ class Batch(Generic[Tk, Tv], ABC):
 
 class DoubleBatch(Batch[int, int]):
     @staticmethod
-    async def resolve_futures(batch: Iterable[int]) -> Iterable[int]:
+    async def resolve_futures(batch: Iterable[int]) -> Mapping[int, int]:
         await asyncio.sleep(1)
-        return [x + x for x in batch]
+        return {x: x + x for x in batch}
 
 
 class SquareBatch(Batch):
     @staticmethod
-    async def resolve_futures(batch: Iterable[int]) -> Iterable[int]:
+    async def resolve_futures(batch: Iterable[int]) -> Mapping[int, int]:
         await asyncio.sleep(1)
-        return [x * x for x in batch]
+        return {x: x * x for x in batch}
 
 
 async def double_square(x: int) -> int:
