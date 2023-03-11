@@ -5,6 +5,7 @@ from abc import ABC
 from abc import abstractmethod
 from asyncio import Future
 from asyncio import TimerHandle
+from functools import cache
 from typing import Awaitable
 from typing import ClassVar
 from typing import Generic
@@ -18,15 +19,19 @@ Tv = TypeVar('Tv')
 
 
 class Batch(Generic[Tk, Tv], ABC):
-    futures: ClassVar[dict[Tk, Future[Tv]]] = {}
     timer_handle: ClassVar[Optional[TimerHandle]] = None
 
-    @staticmethod
-    async def resolve_batch(batch: type[Batch], futures: dict[Tk, Future[Tv]]) -> None:
-        batch_keys = list(futures.keys())
-        print(f'>>> flush {batch.__name__}({len(batch_keys)}) {batch_keys}')
+    @classmethod
+    @cache
+    def get_futures(cls) -> dict[Tk, Future[Tv]]:
+        return {}
 
-        future_results = await batch.resolve_futures(batch_keys)
+    @classmethod
+    async def resolve(cls, futures: dict[Tk, Future[Tv]]) -> None:
+        batch_keys = list(futures.keys())
+        print(f'>>> flush {cls.__name__}({len(batch_keys)}) {batch_keys}')
+
+        future_results = await cls.resolve_futures(batch_keys)
         if future_results.keys() != futures.keys():
             raise ValueError('Batch resolved an incomplete set of future keys')
 
@@ -36,9 +41,10 @@ class Batch(Generic[Tk, Tv], ABC):
     @staticmethod
     def schedule_batches() -> None:
         loop = asyncio.get_event_loop()
-        for batch in filter(lambda b: b.futures, Batch.__subclasses__()):
-            loop.create_task(batch.resolve_batch(batch, batch.futures))
-            batch.futures = {}
+        for batch in Batch.__subclasses__():
+            if futures := batch.get_futures():
+                loop.create_task(batch.resolve(futures.copy()))
+                futures.clear()
 
         Batch.timer_handle = None
 
@@ -55,12 +61,7 @@ class Batch(Generic[Tk, Tv], ABC):
         if not Batch.timer_handle:
             Batch.timer_handle = loop.call_later(0, Batch.schedule_batches)
 
-        if not cls.futures:
-            cls.futures = {}
-        if key not in cls.futures:
-            cls.futures[key] = loop.create_future()
-
-        return cls.futures[key]
+        return cls.get_futures().setdefault(key, loop.create_future())
 
     # External interface
 
