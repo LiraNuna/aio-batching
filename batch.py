@@ -4,6 +4,7 @@ import asyncio
 from abc import ABC
 from abc import abstractmethod
 from asyncio import Future
+from asyncio import Task
 from asyncio import TimerHandle
 from functools import cache
 from typing import Awaitable
@@ -19,6 +20,7 @@ Tv = TypeVar('Tv')
 
 
 class Batch(Generic[Tk, Tv], ABC):
+    tasks: ClassVar[set[Task]] = set()
     timer_handle: ClassVar[Optional[TimerHandle]] = None
 
     @classmethod
@@ -43,7 +45,10 @@ class Batch(Generic[Tk, Tv], ABC):
         loop = asyncio.get_event_loop()
         for batch in Batch.__subclasses__():
             if futures := batch.get_futures():
-                loop.create_task(batch.resolve(futures.copy()))
+                task = loop.create_task(batch.resolve(futures.copy()))
+                batch.tasks.add(task)
+                task.add_done_callback(batch.tasks.discard)
+
                 futures.clear()
 
         Batch.timer_handle = None
